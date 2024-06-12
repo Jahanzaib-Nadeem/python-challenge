@@ -1,10 +1,24 @@
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware import csrf
-from rest_framework import exceptions as rest_exceptions, response, decorators as rest_decorators, permissions as rest_permissions
+from rest_framework import decorators as rest_decorators, permissions as rest_permissions, exceptions as rest_exceptions, response
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, exceptions as jwt_exceptions
 from user import serializers, models
 import stripe
+
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from swagger_schemas.user_schemas import (
+    login_body_schema,
+    login_success_schema,
+    register_body_schema,
+    register_bad_request_schema,
+    user_response_schema,
+    subscriptions_array_schema
+)
+
+UNAUTHORIZED_ACCESS_MESSAGE = 'Authentication credentials were not provided.'
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 prices = {
@@ -24,7 +38,16 @@ def get_user_tokens(user):
         "access_token": str(refresh.access_token)
     }
 
-
+@swagger_auto_schema(
+    method='post',
+    request_body=login_body_schema,
+    operation_description="This API is used for user Authentication.",
+    responses={
+        200: openapi.Response(description='Returns user access token and refresh token is user is authenticated.', schema=login_success_schema),
+        400: "Invalid Email",
+        401: "Email or Password is incorrect"
+    }
+)
 @rest_decorators.api_view(["POST"])
 @rest_decorators.permission_classes([])
 def loginView(request):
@@ -63,6 +86,15 @@ def loginView(request):
     raise rest_exceptions.AuthenticationFailed(
         "Email or Password is incorrect!")
 
+@swagger_auto_schema(
+    method='post',
+    request_body=register_body_schema,
+     operation_description="This API is used for registering a new user.",
+    responses={
+        200: 'Registered',
+        400: openapi.Response(description='Bad Request', schema=register_bad_request_schema)
+    }
+)
 
 @rest_decorators.api_view(["POST"])
 @rest_decorators.permission_classes([])
@@ -76,6 +108,15 @@ def registerView(request):
         return response.Response("Registered!")
     return rest_exceptions.AuthenticationFailed("Invalid credentials!")
 
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="This API is used logging out. It removes the acces token from the cookie.",
+    responses={
+        200: 'Logged out successfully',
+        401: UNAUTHORIZED_ACCESS_MESSAGE
+    }
+)
 
 @rest_decorators.api_view(['POST'])
 @rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
@@ -128,6 +169,12 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
         response["X-CSRFToken"] = request.COOKIES.get("csrftoken")
         return super().finalize_response(request, response, *args, **kwargs)
 
+@swagger_auto_schema(
+    method='get',
+    security=[{'Bearer': []}],
+    operation_description="This API Retrives user information.",
+    responses={200: openapi.Response(description='User Object', schema=user_response_schema)}
+)
 
 @rest_decorators.api_view(["GET"])
 @rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
@@ -140,6 +187,15 @@ def user(request):
     serializer = serializers.UserSerializer(user)
     return response.Response(serializer.data)
 
+@swagger_auto_schema(
+    method='get',
+    security=[{'Bearer': []}],
+    operation_description="This API Retrives a list of user subscriptions.",
+    responses={
+        200: openapi.Response(description='A list of user subscription', schema=subscriptions_array_schema),
+        401: UNAUTHORIZED_ACCESS_MESSAGE
+    }
+)
 
 @rest_decorators.api_view(["GET"])
 @rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
